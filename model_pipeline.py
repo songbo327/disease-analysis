@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 
 # Load dataset
-path = '../disease-analysis/cardio_train.csv'
+path = './cardio_train.csv'
 df = pd.read_csv(path, sep=';')
 
 df.drop('id', axis=1, inplace=True)
