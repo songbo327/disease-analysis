@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['font.size'] = 15
+plt.rcParams['legend.loc'] = 'best'
+plt.rcParams['figure.facecolor'] = '#FFFFFF'
 import seaborn as sns
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
@@ -9,7 +13,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, 
-                             accuracy_score, f1_score, precision_score, recall_score)
+                             accuracy_score, f1_score, precision_score, recall_score,
+                             roc_curve, auc)
 
 def train_and_evaluate(df):
     """Train models and compare results"""
@@ -61,6 +66,7 @@ def train_and_evaluate(df):
     
     # Train and evaluate
     all_results = []
+    roc_data = {}
     
     for name, config in models.items():
         
@@ -81,12 +87,18 @@ def train_and_evaluate(df):
         
         # Predictions
         y_pred = grid.predict(X_te)
+        y_prob = grid.predict_proba(X_te)[:, 1]
         
         # Calculate metrics
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         precision = precision_score(y_test, y_pred)
         recall = recall_score(y_test, y_pred)
+        
+        # ROC curve data
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        roc_auc = auc(fpr, tpr)
+        roc_data[name] = {'fpr': fpr, 'tpr': tpr, 'auc': roc_auc}
         
         # Store results
         all_results.append({
@@ -95,6 +107,7 @@ def train_and_evaluate(df):
             'F1_Score': f1,
             'Precision': precision,
             'Recall': recall,
+            'AUC': roc_auc,
             'Best_Params': str(grid.best_params_)
         })
         
@@ -103,6 +116,7 @@ def train_and_evaluate(df):
         print(f"F1 Score: {f1:.4f}")
         print(f"Precision: {precision:.4f}")
         print(f"Recall: {recall:.4f}")
+        print(f"AUC: {roc_auc:.4f}")
         
         # Confusion matrix
         cm = confusion_matrix(y_test, y_pred)
@@ -120,7 +134,7 @@ def train_and_evaluate(df):
 
     results_df.to_csv('results/model_comparison.csv', index=False)
     
-    print(results_df[['Model', 'Accuracy', 'F1_Score', 'Precision', 'Recall']].to_string(index=False))
+    print(results_df[['Model', 'Accuracy', 'F1_Score', 'Precision', 'Recall', 'AUC']].to_string(index=False))
     
     # Plot comparison
     plt.figure(figsize=(10, 6))
@@ -142,7 +156,28 @@ def train_and_evaluate(df):
     plt.savefig('plots/model_comparison.png')
     plt.close()
     
-    # Feature importance
+    # Plot ROC curves
+    plt.figure(figsize=(10, 8))
+    colors = ['blue', 'red', 'green', 'orange', 'purple']
+    
+    for idx, (name, data) in enumerate(roc_data.items()):
+        plt.plot(data['fpr'], data['tpr'], color=colors[idx], 
+                linewidth=2, label=f'{name} (AUC = {data["auc"]:.3f})')
+    
+    plt.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Random Classifier')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve Comparison')
+    plt.legend(loc='lower right')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('plots/roc_curve_comparison.png')
+    plt.close()
+    
+    # Feature importance (Random Forest)
+    print("\n[5] Analyzing Feature Importance...")
     
     best_rf = RandomForestClassifier(
         n_estimators=100, 
