@@ -41,10 +41,10 @@ The focus of this project is to reinforce and deepen our existing skills within 
 
 ```
 project-repo/
-├── data/                    # Raw and processed datasets
-├── notebooks/               # For EDA and experiments
 ├── src/                     # Source code modules 
 ├── reports/                 # Generated reports and figures
 ├── README.md                # This file
-└── requirements.txt         # Project dependencies
+├── cardio_train.csv         # Raw dataset
+└── report.pdf               # Project report
+└── download_dataset.py      # Script to download the dataset
 ```
