@@ -14,9 +14,72 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, 
                              accuracy_score, f1_score, precision_score, recall_score,
-                             roc_curve, auc)
+                             roc_curve, auc, roc_auc_score)
+import joblib
+import os
 
-def train_and_evaluate(df):
+def plot_enhanced_roc(roc_data, y_test):
+    """Plot enhanced ROC curves with confidence intervals"""
+    
+    plt.figure(figsize=(12, 10))
+    colors = {'Logistic_Regression': '#1f77b4', 'KNN': '#ff7f0e', 
+              'Decision_Tree': '#2ca02c', 'Random_Forest': '#d62728', 
+              'Gradient_Boosting': '#9467bd'}
+    
+    for name, data in roc_data.items():
+        fpr = data['fpr']
+        tpr = data['tpr']
+        roc_auc = data['auc']
+        
+        # Calculate confidence intervals using bootstrap
+        n_bootstraps = 100
+        tprs = []
+        aucs = []
+        mean_fpr = np.linspace(0, 1, 100)
+        
+        np.random.seed(42)
+        for i in range(n_bootstraps):
+            indices = np.random.randint(0, len(y_test), len(y_test))
+            if len(np.unique(y_test.iloc[indices])) < 2:
+                continue
+            
+            y_prob_array = data['y_prob']
+            fpr_boot, tpr_boot, _ = roc_curve(y_test.iloc[indices], y_prob_array[indices])
+            tprs.append(np.interp(mean_fpr, fpr_boot, tpr_boot))
+            tprs[-1][0] = 0.0
+            aucs.append(auc(fpr_boot, tpr_boot))
+        
+        tprs = np.array(tprs)
+        mean_tpr = np.mean(tprs, axis=0)
+        mean_tpr[-1] = 1.0
+        std_tpr = np.std(tprs, axis=0)
+        tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
+        tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
+        
+        # Plot mean ROC curve
+        plt.plot(fpr, tpr, color=colors[name], linewidth=2.5,
+                label=f'{name.replace("_", " ")} (AUC = {roc_auc:.3f})')
+        
+        # Plot confidence interval
+        tprs_lower_interp = np.interp(fpr, mean_fpr, tprs_lower)
+        tprs_upper_interp = np.interp(fpr, mean_fpr, tprs_upper)
+        plt.fill_between(fpr, tprs_lower_interp, tprs_upper_interp, color=colors[name], alpha=0.15,
+                        label='_nolegend_')
+    
+    plt.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Random Classifier (AUC = 0.500)')
+    plt.xlabel('False Positive Rate', fontsize=14)
+    plt.ylabel('True Positive Rate', fontsize=14)
+    plt.title('Enhanced ROC Curve Comparison with Confidence Intervals', fontsize=16)
+    plt.legend(loc='lower right', fontsize=10, framealpha=0.9)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1.05])
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('plots/roc_curve_comparison.png')
+    plt.close()
+
+
+def train_and_evaluate(df, save_models=True):
     """Train models and compare results"""
     # Split features and target
     X = df.drop('cardio', axis=1)
@@ -67,6 +130,7 @@ def train_and_evaluate(df):
     # Train and evaluate
     all_results = []
     roc_data = {}
+    trained_models = {}
     
     for name, config in models.items():
         
@@ -98,7 +162,7 @@ def train_and_evaluate(df):
         # ROC curve data
         fpr, tpr, _ = roc_curve(y_test, y_prob)
         roc_auc = auc(fpr, tpr)
-        roc_data[name] = {'fpr': fpr, 'tpr': tpr, 'auc': roc_auc}
+        roc_data[name] = {'fpr': fpr, 'tpr': tpr, 'auc': roc_auc, 'y_prob': y_prob}
         
         # Store results
         all_results.append({
@@ -111,12 +175,25 @@ def train_and_evaluate(df):
             'Best_Params': str(grid.best_params_)
         })
         
+        print(f"\n{name}")
         print(f"Best Parameters: {grid.best_params_}")
         print(f"Accuracy: {acc:.4f}")
         print(f"F1 Score: {f1:.4f}")
         print(f"Precision: {precision:.4f}")
         print(f"Recall: {recall:.4f}")
         print(f"AUC: {roc_auc:.4f}")
+        
+        # Save model
+        if save_models:
+            os.makedirs('models', exist_ok=True)
+            model_data = {
+                'model': grid.best_estimator_,
+                'scaler': scaler if config['use_scaled'] else None,
+                'feature_names': feature_names,
+                'use_scaled': config['use_scaled']
+            }
+            joblib.dump(model_data, f'models/{name}.joblib')
+            trained_models[name] = model_data
         
         # Confusion matrix
         cm = confusion_matrix(y_test, y_pred)
@@ -134,6 +211,7 @@ def train_and_evaluate(df):
 
     results_df.to_csv('results/model_comparison.csv', index=False)
     
+    print("Model Comparison Results")
     print(results_df[['Model', 'Accuracy', 'F1_Score', 'Precision', 'Recall', 'AUC']].to_string(index=False))
     
     # Plot comparison
@@ -156,25 +234,8 @@ def train_and_evaluate(df):
     plt.savefig('plots/model_comparison.png')
     plt.close()
     
-    # Plot ROC curves
-    plt.figure(figsize=(10, 8))
-    colors = ['blue', 'red', 'green', 'orange', 'purple']
-    
-    for idx, (name, data) in enumerate(roc_data.items()):
-        plt.plot(data['fpr'], data['tpr'], color=colors[idx], 
-                linewidth=2, label=f'{name} (AUC = {data["auc"]:.3f})')
-    
-    plt.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Random Classifier')
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('ROC Curve Comparison')
-    plt.legend(loc='lower right')
-    plt.xlim([0, 1])
-    plt.ylim([0, 1])
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('plots/roc_curve_comparison.png')
-    plt.close()
+    # Enhanced ROC curves with confidence intervals
+    plot_enhanced_roc(roc_data, y_test)
     
     # Feature importance (Random Forest)
     print("\n[5] Analyzing Feature Importance...")
@@ -210,4 +271,4 @@ def train_and_evaluate(df):
     
     best_model_name = results_df.iloc[0]['Model']
     
-    return results_df, best_model_name
+    return results_df, best_model_name, trained_models if save_models else None
