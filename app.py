@@ -179,10 +179,6 @@ if st.button("🔍 Predict Risk", type="primary", use_container_width=True):
         
         st.bar_chart(prob_df, use_container_width=True)
         
-        # Best model recommendation
-        best_model = results_df.loc[results_df['Probability_Disease'].idxmax()]
-        st.info(f"**Highest Risk Detection**: {best_model['Model']} predicts {best_model['Prediction']} "
-               f"with {best_model['Confidence']} confidence")
 
 # Sidebar with information
 with st.sidebar:
